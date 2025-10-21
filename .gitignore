@@ -1,0 +1,6 @@
+
+.databricks
+
+.python_packages
+__pycache__
+.venv
