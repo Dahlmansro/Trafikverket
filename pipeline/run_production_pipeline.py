@@ -4,8 +4,10 @@ PRODUCTION PIPELINE ORCHESTRATOR
 
 Kör hela datapipelinen:
 1. Hämta ny data från Trafikverkets API → raw/
-2. Processera raw → curated/trips_combined_YYYYMMDD.parquet
-3. Kombinera alla trips → curated/trips_combined_total.parquet
+2. Hämta planerad data från Trafikverkets API → raw/planned/
+3. Processera raw → curated/trips_combined_YYYYMMDD.parquet
+4. Transformera planerad data → curated/planned/
+5. Kombinera alla trips → curated/trips_combined_total.parquet
 
 Kan köras manuellt eller schemaläggas.
 """
@@ -19,7 +21,9 @@ from logger import get_logger
 
 # Importera pipeline-steg
 import fetch_train_data
+import fetch_planned
 import process_trips
+import transform_planned_to_curated
 import combine_all_trips
 
 logger = get_logger("production_pipeline")
@@ -38,7 +42,7 @@ def run_step(step_name: str, step_func, *args, **kwargs) -> bool:
         True om lyckades, False annars
     """
     logger.section("=" * 60)
-    logger.info(f"🚀 STEG: {step_name}")
+    logger.info(f"STEG: {step_name}")
     logger.section("=" * 60 + "\n")
     
     try:
@@ -83,18 +87,28 @@ Exempel:
         help="Hoppa över API-hämtning (steg 1)"
     )
     parser.add_argument(
+        "--skip-fetch-planned",
+        action="store_true",
+        help="Hoppa över hämtning av planerad data (steg 2)"
+    )
+    parser.add_argument(
         "--skip-process",
         action="store_true",
-        help="Hoppa över processering (steg 2)"
+        help="Hoppa över processering (steg 3)"
+    )
+    parser.add_argument(
+        "--skip-transform-planned",
+        action="store_true",
+        help="Hoppa över transformering av planerad data (steg 4)"
     )
     parser.add_argument(
         "--skip-combine",
         action="store_true",
-        help="Hoppa över kombination (steg 3)"
+        help="Hoppa över kombination (steg 5)"
     )
     parser.add_argument(
         "--only",
-        choices=["fetch", "process", "combine"],
+        choices=["fetch", "fetch-planned", "process", "transform-planned", "combine"],
         help="Kör endast ett specifikt steg"
     )
     parser.add_argument(
@@ -112,19 +126,21 @@ Exempel:
     
     # Banner
     logger.section("\n" + "=" * 60)
-    logger.section("🚂 TÅGDATA PRODUCTION PIPELINE")
+    logger.section(" TÅGDATA PRODUCTION PIPELINE")
     logger.section("=" * 60)
     logger.info(f"Starttid: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     if args.only:
         logger.info(f"Mode: Kör endast {args.only.upper()}\n")
     else:
-        logger.info("Mode: Full pipeline (3 steg)\n")
+        logger.info("Mode: Full pipeline (5 steg)\n")
     
     # Håll koll på vad som lyckats
     results = {
         "fetch": None,
+        "fetch_planned": None,
         "process": None,
+        "transform_planned": None,
         "combine": None
     }
     
@@ -134,7 +150,7 @@ Exempel:
         # ========== STEG 1: FETCH ==========
         if args.only == "fetch" or (not args.only and not args.skip_fetch):
             results["fetch"] = run_step(
-                "1/3 - HÄMTA DATA FRÅN API",
+                "1/5 - HÄMTA DATA FRÅN API",
                 fetch_train_data.main
             )
             
@@ -143,13 +159,31 @@ Exempel:
                 raise Exception("Fetch-steget misslyckades")
         
         elif not args.only:
-            logger.info("ℹ️ Steg 1 (Fetch) hoppades över\n")
+            logger.info("ℹ Steg 1 (Fetch) hoppades över\n")
         
         # Om vi bara ska köra fetch, avsluta här
         if args.only == "fetch":
             return 0 if results["fetch"] else 1
         
-        # ========== STEG 2: PROCESS ==========
+        # ========== STEG 2: FETCH PLANNED ==========
+        if args.only == "fetch-planned" or (not args.only and not args.skip_fetch_planned):
+            results["fetch_planned"] = run_step(
+                "2/5 - HÄMTA PLANERAD DATA FRÅN API",
+                fetch_planned.main
+            )
+            
+            if not results["fetch_planned"] and not args.only:
+                logger.error("\n❌ Fetch planned misslyckades - avbryter pipeline")
+                raise Exception("Fetch-planned-steget misslyckades")
+        
+        elif not args.only:
+            logger.info("ℹ️ Steg 2 (Fetch Planned) hoppades över\n")
+        
+        # Om vi bara ska köra fetch-planned, avsluta här
+        if args.only == "fetch-planned":
+            return 0 if results["fetch_planned"] else 1
+        
+        # ========== STEG 3: PROCESS ==========
         if args.only == "process" or (not args.only and not args.skip_process):
             # Sätt upp argument för process_trips
             process_args = []
@@ -165,7 +199,7 @@ Exempel:
             
             try:
                 results["process"] = run_step(
-                    "2/3 - PROCESSERA RAW → TRIPS",
+                    "3/5 - PROCESSERA RAW → TRIPS",
                     process_trips.main
                 )
             finally:
@@ -176,16 +210,34 @@ Exempel:
                 raise Exception("Process-steget misslyckades")
         
         elif not args.only:
-            logger.info("ℹ️ Steg 2 (Process) hoppades över\n")
+            logger.info("ℹ Steg 3 (Process) hoppades över\n")
         
         # Om vi bara ska köra process, avsluta här
         if args.only == "process":
             return 0 if results["process"] else 1
         
-        # ========== STEG 3: COMBINE ==========
+        # ========== STEG 4: TRANSFORM PLANNED ==========
+        if args.only == "transform-planned" or (not args.only and not args.skip_transform_planned):
+            results["transform_planned"] = run_step(
+                "4/5 - TRANSFORMERA PLANERAD DATA",
+                transform_planned_to_curated.main
+            )
+            
+            if not results["transform_planned"] and not args.only:
+                logger.error("\n❌ Transform planned misslyckades - avbryter pipeline")
+                raise Exception("Transform-planned-steget misslyckades")
+        
+        elif not args.only:
+            logger.info("ℹ Steg 4 (Transform Planned) hoppades över\n")
+        
+        # Om vi bara ska köra transform-planned, avsluta här
+        if args.only == "transform-planned":
+            return 0 if results["transform_planned"] else 1
+        
+        # ========== STEG 5: COMBINE ==========
         if args.only == "combine" or (not args.only and not args.skip_combine):
             results["combine"] = run_step(
-                "3/3 - KOMBINERA ALLA TRIPS",
+                "5/5 - KOMBINERA ALLA TRIPS",
                 combine_all_trips.main
             )
             
@@ -193,7 +245,7 @@ Exempel:
                 logger.warning("\n⚠️ Combine misslyckades men pipeline fortsätter")
         
         elif not args.only:
-            logger.info("ℹ️ Steg 3 (Combine) hoppades över\n")
+            logger.info("ℹSteg 5 (Combine) hoppades över\n")
         
         # Om vi bara ska köra combine, avsluta här
         if args.only == "combine":
@@ -212,7 +264,7 @@ Exempel:
     duration = end_time - start_time
     
     logger.section("\n" + "=" * 60)
-    logger.info("📊 PIPELINE SAMMANFATTNING")
+    logger.info(" PIPELINE SAMMANFATTNING")
     logger.section("=" * 60)
     
     # Visa resultat per steg
@@ -221,19 +273,31 @@ Exempel:
     if results["fetch"] is not None:
         icon = "✅" if results["fetch"] else "❌"
         status = "LYCKADES" if results["fetch"] else "MISSLYCKADES"
-        logger.info(f"{icon} Steg 1 (Fetch):   {status}")
+        logger.info(f"{icon} Steg 1 (Fetch):             {status}")
         steps_status.append(results["fetch"])
+    
+    if results["fetch_planned"] is not None:
+        icon = "✅" if results["fetch_planned"] else "❌"
+        status = "LYCKADES" if results["fetch_planned"] else "MISSLYCKADES"
+        logger.info(f"{icon} Steg 2 (Fetch Planned):    {status}")
+        steps_status.append(results["fetch_planned"])
     
     if results["process"] is not None:
         icon = "✅" if results["process"] else "❌"
         status = "LYCKADES" if results["process"] else "MISSLYCKADES"
-        logger.info(f"{icon} Steg 2 (Process): {status}")
+        logger.info(f"{icon} Steg 3 (Process):          {status}")
         steps_status.append(results["process"])
+    
+    if results["transform_planned"] is not None:
+        icon = "✅" if results["transform_planned"] else "❌"
+        status = "LYCKADES" if results["transform_planned"] else "MISSLYCKADES"
+        logger.info(f"{icon} Steg 4 (Transform Planned): {status}")
+        steps_status.append(results["transform_planned"])
     
     if results["combine"] is not None:
         icon = "✅" if results["combine"] else "❌"
         status = "LYCKADES" if results["combine"] else "MISSLYCKADES"
-        logger.info(f"{icon} Steg 3 (Combine): {status}")
+        logger.info(f"{icon} Steg 5 (Combine):          {status}")
         steps_status.append(results["combine"])
     
     # Total status
@@ -244,7 +308,7 @@ Exempel:
     
     # Avgör om hela pipelinen lyckades
     if all(steps_status):
-        logger.success("✅ HELA PIPELINE SLUTFÖRD FRAMGÅNGSRIKT!")
+        logger.success("HELA PIPELINE SLUTFÖRD FRAMGÅNGSRIKT!")
         logger.section("=" * 60 + "\n")
         return 0
     elif any(steps_status):
@@ -252,7 +316,7 @@ Exempel:
         logger.section("=" * 60 + "\n")
         return 0
     else:
-        logger.error("❌ PIPELINE MISSLYCKADES")
+        logger.error("PIPELINE MISSLYCKADES")
         logger.section("=" * 60 + "\n")
         return 1
 
