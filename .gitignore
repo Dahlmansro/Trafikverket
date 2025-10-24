@@ -4,3 +4,6 @@
 .python_packages
 __pycache__
 .venv
+.env
+
+pipeline/config.py

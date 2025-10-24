@@ -27,7 +27,23 @@ class PipelineLogger:
         """
         self.script_name = script_name
         self.data_type = data_type
+
+        self._logger_instance = logging.getLogger(self.script_name)
+        self._logger_instance.setLevel(logging.INFO)
+
+        if self._logger_instance.hasHandlers():
+            for handler in list(self._logger_instance.handlers):
+                self._logger_instance.removeHandler(handler)
+
         self.log_file = self._setup_logging()
+
+                # Stäng av verbose logging från Azure SDK
+        logging.getLogger('azure').setLevel(logging.WARNING)
+        logging.getLogger('azure.core').setLevel(logging.WARNING)
+        logging.getLogger('azure.storage').setLevel(logging.WARNING)
+        
+        # Stäng av urllib3 och andra dependencies
+        logging.getLogger('urllib3').setLevel(logging.WARNING)
         
     def _setup_logging(self):
         """Sätt upp logging till både konsol och fil"""
@@ -36,6 +52,9 @@ class PipelineLogger:
         log_dir = script_dir / "logs"
         log_dir.mkdir(exist_ok=True)
         
+        # Skapa format
+        formatter = logging.Formatter('%(message)s')
+
         # Skapa logfilnamn med timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -44,56 +63,44 @@ class PipelineLogger:
         else:
             log_file = log_dir / f"{self.script_name}_{timestamp}.log"
         
-        # Ta bort tidigare handlers om de finns
-        logger = logging.getLogger()
-        if logger.hasHandlers():
-            logger.handlers.clear()
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(formatter)
+        self._logger_instance.addHandler(file_handler)
         
-        # Konfigurera logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
-        
-        # Stäng av verbose logging från Azure SDK
-        logging.getLogger('azure').setLevel(logging.WARNING)
-        logging.getLogger('azure.core').setLevel(logging.WARNING)
-        logging.getLogger('azure.storage').setLevel(logging.WARNING)
-        
-        # Stäng av urllib3 och andra dependencies
-        logging.getLogger('urllib3').setLevel(logging.WARNING)
+        # Stream Handler
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        self._logger_instance.addHandler(stream_handler)
         
         return log_file
     
     def info(self, message):
         """Logga info-meddelande"""
-        logging.info(message)
+        self._logger_instance.info(message)
     
     def warning(self, message):
         """Logga varning"""
-        logging.warning(f"⚠️  {message}")
+        self._logger_instance.warning(f"⚠️  {message}")
+    
+    # ... (upprepa för error, success, section, subsection, summary)
     
     def error(self, message):
         """Logga error"""
-        logging.error(f"❌ {message}")
+        self._logger_instance.error(f"❌ {message}")
     
     def success(self, message):
         """Logga success"""
-        logging.info(f"✅ {message}")
+        self._logger_instance.error(f"✅ {message}")
     
     def section(self, title):
         """Logga section header"""
-        logging.info(f"\n{'='*60}")
-        logging.info(title)
-        logging.info('='*60 + '\n')
+        self._logger_instance.info(f"\n{'='*60}")
+        self._logger_instance.info(title)
+        self._logger_instance.info('='*60 + '\n')
     
     def subsection(self, title):
         """Logga subsection"""
-        logging.info(f"\n{title}")
+        self._logger_instance.error(f"\n{title}")
     
     def get_log_path(self):
         """Returnera sökväg till loggfilen"""

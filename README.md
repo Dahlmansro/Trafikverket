@@ -1,168 +1,141 @@
-# Tågdata Pipeline
+````markdown
+# 🚆 Tågdata-pipeline
+
+En komplett datapipeline som hämtar, bearbetar och lagrar realtidsdata från **Trafikverkets öppna API**.  
+Resultatet blir strukturerade resor (“trips”) som lagras i **Azure Data Lake** för vidare analys och maskininlärning.
 
 ---
 
-## Översikt
+## 🧭 Översikt
 
-Denna pipeline hämtar realtidsdata från Trafikverkets öppna API, processerar den till strukturerade resor (trips) och lagrar resultatet i Azure Data Lake.
-
-**Vad pipelinen gör:**
-1. ✅ Hämtar tågdata för senaste 3 dagarna från Trafikverket
-2. ✅ Separerar departures och arrivals
-3. ✅ Bygger kompletta resor (första avgång → sista ankomst)
-4. ✅ Utvidgar med stationsnamn, län och avstånd (hämtar från station_info.parquet)
-5. ✅ Filtrerar bort dubbletter
-6. ✅ Sparar allt i Azure som Parquet-filer
+**Pipeline-flöde:**
+1. Hämtar tågdata för de senaste 3 dagarna från Trafikverket  
+2. Delar upp i avgångar (`departures`) och ankomster (`arrivals`)  
+3. Bygger kompletta resor (första avgång → sista ankomst)  
+4. Lägger till stationsnamn, län och avstånd (från `station_info.parquet`)  
+5. Filtrerar bort dubbletter  
+6. Sparar resultatet i **Azure Data Lake** som Parquet-filer  
 
 ---
 
-### Kör hela pipelinen
+## ⚙️ Kör hela pipelinen
 
 ```bash
 python run_production_pipeline.py
-```
+````
 
-Detta kör alla 3 steg i ordning:
+Detta kör alla tre steg i ordning:
+
 1. Hämtar senaste 3 dagarna från API
 2. Processerar till trips
-3. Kombinerar till total-fil
+3. Kombinerar allt till en total-fil
 
-Filerna sparas i Azure
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. FETCH DATA (fetch_train_data.py)                        │
-│  Trafikverkets API → Azure/raw/                             │
-│  ├─ departures_YYYYMMDD.parquet                             │
-│  └─ arrivals_YYYYMMDD.parquet                               │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. PROCESS TRIPS (process_trips.py)                        │
-│  Azure/raw/ → Azure/curated/                                │
-│  └─ trips_combined_YYYYMMDD.parquet                         │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. COMBINE ALL (combine_all_trips.py)                      │
-│  Alla trips → En total-fil                                  │
-│  └─ trips_combined_total.parquet (utan dubbletter)          │
-└─────────────────────────────────────────────────────────────┘
+Resultaten sparas i Azure.
 
 ```
-
-### Plannerade resor, dvs morgondagens resor för ML
-
-Punkt 1 och 2 måste köras "manuellt". 
-
-1. Hämtas med fetch_planned.py
-2. Processesas med transform_planned_to_curated.py
-3. Sparas till Azure/curated/planned
-
+┌─────────────────────────────────────────────┐
+│  1. FETCH DATA (fetch_train_data.py)        │
+│  Trafikverket API → Azure/raw/              │
+│  ├─ departures_YYYYMMDD.parquet             │
+│  └─ arrivals_YYYYMMDD.parquet               │
+└─────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────┐
+│  2. PROCESS TRIPS (process_trips.py)        │
+│  Azure/raw/ → Azure/curated/                │
+│  └─ trips_combined_YYYYMMDD.parquet         │
+└─────────────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────┐
+│  3. COMBINE ALL (combine_all_trips.py)      │
+│  Alla trips → En total-fil                  │
+│  └─ trips_combined_total.parquet            │
+└─────────────────────────────────────────────┘
 ```
-n                                     
-### Inspektera filerna
-Alla historiska resor -> inspect_combined.total.ipynb
-Plannerade resor -> inspect_planned.ipynb
+
+---
+
+##  Planerade resor (för ML-förutsägelser)
+
+1. **Hämta data:**
+   `fetch_planned.py`
+2. **Bearbeta data:**
+   `transform_planned_to_curated.py`
+3. **Spara till:**
+   `Azure/curated/planned/`
+
+**Inspektion av hämtad data kan göras med:**
+
+* Historiska resor → `inspect_combined_total.ipynb`
+* Planerade resor → `inspect_planned.ipynb`
+
+---
+
+## 📁 Projektstruktur
 
 ```
 projekt/
-├── config.py                          # Konfiguration (API keys, Azure credentials)
+├── config.py                          # Konfiguration (API-nycklar, Azure credentials)
 ├── logger.py                          # Logger-modul
 ├── fetch_train_data.py                # Steg 1: Hämta från API
 ├── fetch_planned.py                   # Hämta planerad data
 ├── process_trips.py                   # Steg 2: Bygg trips
 ├── combine_all_trips.py               # Steg 3: Kombinera allt
-├── run_production_pipeline.py         # Huvudfil
+├── run_production_pipeline.py         # Huvudfil för körning
 ├── transform_planned_to_curated.py    # Transformering av planerad data
-├── inspect_combined_total.ipynb       # Jupyter notebook för inspektion
-├── inspect_planned.ipynb              # Jupyter notebook för planerad data
-├── __init__.py                        # Python package
+├── inspect_combined_total.ipynb       # Notebook för historisk data
+├── inspect_planned.ipynb              # Notebook för planerad data
+├── station_info.parquet               # Stationsdata
 ├── README.md
-├── .funcignore
 ├── .gitignore
-└── station_info.parquet               # Stationsdata
-
+└── .funcignore
 ```
 
-### Loggning
-
-Loggar sparas automatiskt till:
-- Loggfil via `logger.py`
-Loggnigen är inte bra, har inte gått igenom den efter det att jag gjorde om hela piplinen 
 ---
 
-### Trips (efter processering)
+## 🧾 Loggning
 
-**Identifierare & Datum:**
-```
-AdvertisedTrainIdent         # Tåg-ID (t.ex. "1240", "8182")
-TripStartDate                # Resans datum (YYYY-MM-DD)
-```
+Loggar hanteras via `logger.py` och sparas automatiskt till fil.
 
-**Stationer:**
-```
-LocationSignatureDeparture   # Startstationskod (t.ex. "Cst", "G", "Mr")
-LocationSignatureArrival     # Slutstationskod (t.ex. "U", "Hb", "Åbe")
-departure_station            # Startstationsnamn (t.ex. "Stockholm Central", "Göteborg Central")
-arrival_station              # Slutstationsnamn (t.ex. "Uppsala C", "Helsingborg C")
-end_station_county           # Län för slutstation (t.ex. "Stockholms län", "Skåne län")
-```
+---
 
-**Tider - Avgång:**
-```
-DepartureAdvertised          # Planerad avgångstid (datetime)
-DepartureActual              # Faktisk avgångstid (datetime)
-```
+##  Datamodell
 
-**Tider - Ankomst:**
-```
-ArrivalAdvertised            # Planerad ankomsttid (datetime)
-ArrivalActual                # Faktisk ankomsttid (datetime)
-```
+| Kategori                  | Kolumn(er)                                                      | Beskrivning                            |
+| ------------------------- | --------------------------------------------------------------- | -------------------------------------- |
+| **Identifierare & datum** | `AdvertisedTrainIdent`, `TripStartDate`                         | Tåg-ID och datum                       |
+| **Stationer**             | `departure_station`, `arrival_station`, `end_station_county`    | Namn och län                           |
+| **Tider – avgång**        | `DepartureAdvertised`, `DepartureActual`                        | Planerad och faktisk avgång            |
+| **Tider – ankomst**       | `ArrivalAdvertised`, `ArrivalActual`                            | Planerad och faktisk ankomst           |
+| **Mätvärden**             | `DurationActualMinutes`, `DistanceKm`, `is_delayed`             | Restid, avstånd och försening (>3 min) |
+| **Features (för ML)**     | `start_hour`, `start_day_of_month`, `start_month`, `is_weekday` | Tidsbaserade variabler                 |
+| **Status & operatör**     | `Canceled`, `Operator`, `TrainOwner`, `trip_typeoftraffic`      | Status och operatör                    |
+| **Avvikelser**            | `Deviation_Description`                                         | Orsak till avvikelse                   |
 
-**Prestanda & Försening:**
+---
 
-DurationActualMinutes        # Faktisk restid i minuter (från DepartureActual till ArrivalActual)
-DistanceKm                   # Avstånd i kilometer (beräknat med haversine-formel)
-is_delayed                   # 1 om >3 min sen, 0 annars (boolean som int)
-```
+## 🧮 Hantering av saknade värden
 
-**Features (för ML):**
-```
-start_hour                   # Avgångstimme (0-23)
-start_day_of_month           # Dag i månaden (1-31)
-start_month                  # Månad (1-12)
-is_weekday                   # 1 om måndag-fredag, 0 om lördag-söndag
-```
+| Scenario        | Canceled | DepartureActual | ArrivalActual | Resultat         |
+| --------------- | -------- | --------------- | ------------- | ---------------- |
+| Normal resa     | False    | ✅               | ✅             | ✅ Huvudfil       |
+| Helt inställd   | True     | ❌               | ❌             | 📋 Canceled-fil  |
+| Delvis inställd | True     | ❌               | ✅             | ✅ Fylls          |
+| Delvis inställd | True     | ✅               | ❌             | ✅ Fylls          |
+| Ofullständig    | False    | ❌               | ✅             | ❌ Filtreras bort |
+| Ofullständig    | False    | ✅               | ❌             | ❌ Filtreras bort |
 
-**Status & Operatör:**
-```
-Canceled                     # True om resa inställd, False annars
-Operator                     # Operatör (t.ex. "SJ", "MTR", "Öresundståg")
-TrainOwner                   # Tågägare (t.ex. "SJ", "SLL", "SKANE", "Ö-TÅG")
-trip_typeoftraffic           # Trafiktyp kod 
-```
+> Saknade tider (`DepartureActual`, `ArrivalActual`) fylls **endast** för inställda resor (`Canceled=True`) eftersom dessa har dokumenterad avvikelse.
 
-**Avvikelser:**
-```
-Deviation_Description        # Beskrivning av avvikelse (t.ex. "Sent från tidigare resa", "Tekniskt fel")
-```
+---
 
-#  Hantering av Saknade Värden
+## 🧠 ML-motivering
 
-| Scenario | Canceled | DepartureActual | ArrivalActual | Resultat |
-|----------|----------|-----------------|---------------|----------|
-| **Normal resa** | False | ✅ Finns | ✅ Finns | ✅ Huvudfil |
-| **Helt inställd** | True | ❌ Saknas | ❌ Saknas | 📋 Canceled-fil |
-| **Delvis inställd** | True | ❌ Saknas | ✅ Finns | ✅ Huvudfil (fylld) |
-| **Delvis inställd** | True | ✅ Finns | ❌ Saknas | ✅ Huvudfil (fylld) |
-| **Ofullständig** | False | ❌ Saknas | ✅ Finns | ❌ Filtreras bort |
-| **Ofullständig** | False | ✅ Finns | ❌ Saknas | ❌ Filtreras bort |
+Pipelinen är förberedd för **prediktiv modellering**.
+Exempel på användningsområden:
 
-##  ML-motivering
+* Förutsäga **tågförseningar**
+* Identifiera vilka resor som löper **störst risk att bli sena**
+* Träna modeller baserat på features såsom tid, veckodag, operatör och sträcka
 
-Saknade `DepartureActual` eller `ArrivalActual` fylls **endast** för inställda resor (`Canceled=True`), eftersom vi då vet att avvikelsen är dokumenterad (True i canceled kolumnen). 
-
-
-
+---
