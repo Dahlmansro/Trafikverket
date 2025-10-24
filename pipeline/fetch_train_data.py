@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Hämtar tågdata från Trafikverkets API för senaste 3 dagarna (exkl. idag)
+Hämtar tågdata från Trafikverkets API för senaste 2 dagarna (exkl. idag)
 Sparar till Azure Data Lake: raw/departures_YYYYMMDD.parquet, raw/arrivals_YYYYMMDD.parquet
 """
 
@@ -234,7 +234,7 @@ def separate_and_save(df: pd.DataFrame, date: datetime) -> Tuple[bool, bool]:
     return dep_success, arr_success
 
 
-def fetch_last_n_days(n_days: int = 3) -> dict:
+def fetch_last_n_days(n_days: int = 2) -> dict:
     """
     Hämtar data för de senaste n dagarna (exkl. idag)
     
@@ -296,8 +296,8 @@ def main():
     logger.info("FETCH TRAIN DATA - START")
     logger.section("=" * 60 + "\n")
     
-    # Hämta senaste 3 dagarna
-    results = fetch_last_n_days(n_days=3)
+    # Hämta senaste 2 dagarna
+    results = fetch_last_n_days(n_days=2)
     
     # Sammanfattning
     logger.section("\n" + "=" * 60)
@@ -319,9 +319,9 @@ def main():
             error = status.get('error', 'Ingen data')
             logger.error(f"{date_str}: ❌ Misslyckades - {error}")
     
-    logger.info(f"\n✅ Lyckades: {total_success}/3 dagar")
+    logger.info(f"\n✅ Lyckades: {total_success}/2 dagar")
     if total_failed > 0:
-        logger.warning(f"⚠️ Misslyckades: {total_failed}/3 dagar")
+        logger.warning(f"⚠️ Misslyckades: {total_failed}/2 dagar")
     
     logger.section("=" * 60)
     logger.success("✅ FETCH KLART!" if total_success > 0 else "❌ FETCH MISSLYCKADES")

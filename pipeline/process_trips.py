@@ -601,10 +601,10 @@ def main():
         logger.info(f"📋 Hittade {len(dates_to_process)} datum att processera")
     else:
         today = datetime.now()
-        for i in range(3, 0, -1):
+        for i in range(2, 0, -1):
             date = today - timedelta(days=i)
             dates_to_process.append(date.strftime("%Y%m%d"))
-        logger.info(f"📋 Processerar senaste 3 dagarna: {', '.join(dates_to_process)}")
+        logger.info(f"📋 Processerar senaste 2 dagarna: {', '.join(dates_to_process)}")
     
     # Processera varje datum
     results = {}
