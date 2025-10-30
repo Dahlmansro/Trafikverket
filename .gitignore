@@ -1,9 +1,13 @@
-
-.databricks
-
-.python_packages
-__pycache__
-.venv
+# hemligheter
 .env
+.venv
 
-pipeline/config.py
+# körloggar
+pipeline/logs/
+
+# pycache
+__pycache__/
+*.pyc
+
+# notebooks autosaves
+.ipynb_checkpoints/

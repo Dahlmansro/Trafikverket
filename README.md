@@ -1,141 +1,269 @@
-````markdown
-# 🚆 Tågdata-pipeline
+# 🚆 Trafikverket – Bygga och analysera tågresor
 
-En komplett datapipeline som hämtar, bearbetar och lagrar realtidsdata från **Trafikverkets öppna API**.  
-Resultatet blir strukturerade resor (“trips”) som lagras i **Azure Data Lake** för vidare analys och maskininlärning.
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
----
 
-## 🧭 Översikt
+## 🧭 Projektöversikt
 
-**Pipeline-flöde:**
-1. Hämtar tågdata för de senaste 3 dagarna från Trafikverket  
-2. Delar upp i avgångar (`departures`) och ankomster (`arrivals`)  
-3. Bygger kompletta resor (första avgång → sista ankomst)  
-4. Lägger till stationsnamn, län och avstånd (från `station_info.parquet`)  
-5. Filtrerar bort dubbletter  
-6. Sparar resultatet i **Azure Data Lake** som Parquet-filer  
+Detta projekt analyserar Trafikverkets öppna tågtrafikdata med syftet att identifiera vilka faktorer som påverkar förseningar samt att bygga prediktiva modeller som kan förutsäga sannolikheten att ett tåg blir försenat. 
+
+Projektet består av en dataprocesspipeline som körs lokalt eller i Azure, och resultatet visualiseras i en Power BI-rapport. 
+Fokus ligger på punktlighet enligt **RT+5** – dvs. andelen tåg som ankommer inom 5 minuter och 59 sekunder efter planerad tid.
 
 ---
 
-## ⚙️ Kör hela pipelinen
+## 📋 Krav före installation
+
+### Systemkrav
+- **Python 3.12** eller senare
+- **Conda** eller **venv** för virtuell miljö
+- **Git** för att klona repositoryt
+- **Power BI Desktop** (för att öppna visualiseringar)
+
+### Azure-krav
+- Ett aktivt **Azure-konto**
+- **Azure Data Lake Storage Gen2** (för att lagra och hantera data)
+- **Storage Account Key** med läs- och skrivbehörigheter
+
+### API-åtkomst
+- **Trafikverkets API-nyckel** https://api.trafikinfo.trafikverket.se/
+
+---
+
+## 🧩 Datakällor
+
+- **Trafikverket Open API** – data om avgångar och ankomster (TrainAnnouncement)
+- **Azure Data Lake Storage** – lagring av rå-, bearbetad och berikad data (parquet-format)
+- **station_info.parquet** – metadata om stationer, län och koordinater
+
+---
+
+## ⚙️ Installation och konfiguration
+
+### Skapa miljö
+```bash
+conda create -n trafikverket_env python=3.12 -y
+conda activate trafikverket_env
+```
+
+### Installera beroenden
+```bash
+pip install -r requirements.txt
+```
+
+### Miljövariabler (.env)
+Skapa en fil `.env` i projektroten med följande nycklar:
+```
+ACCOUNT_URL=https://<ditt_storagekonto>.dfs.core.windows.net
+CONTAINER_NAME=trafikdata
+STORAGE_ACCOUNT_KEY=<din_azure_nyckel>
+TRAFIKVERKET_API_KEY=<din_trafikverket_api_nyckel>
+```
+
+## ▶️ Körning av pipeline
+
+Pipeline-skriptet `process_trips.py` hämtar, bearbetar och sparar resdata till Azure Data Lake.
+
+### Exempel: kör senaste två dagarna
+```bash
+cd pipeline
+python process_trips.py
+```
+
+### Exempel: kör specifika datum
+```bash
+python process_trips.py --dates 20241020 20241021
+```
+
+### Exempel: kör alla tillgängliga raw-filer
+```bash
+python process_trips.py --all
+```
+### Träna och utvärdera maskininlärningsmodeller
+
+**Öppna notebooks i `ml_modell/`:**
 
 ```bash
-python run_production_pipeline.py
-````
-
-Detta kör alla tre steg i ordning:
-
-1. Hämtar senaste 3 dagarna från API
-2. Processerar till trips
-3. Kombinerar allt till en total-fil
-
-Resultaten sparas i Azure.
-
-```
-┌─────────────────────────────────────────────┐
-│  1. FETCH DATA (fetch_train_data.py)        │
-│  Trafikverket API → Azure/raw/              │
-│  ├─ departures_YYYYMMDD.parquet             │
-│  └─ arrivals_YYYYMMDD.parquet               │
-└─────────────────────────────────────────────┘
-                      ↓
-┌─────────────────────────────────────────────┐
-│  2. PROCESS TRIPS (process_trips.py)        │
-│  Azure/raw/ → Azure/curated/                │
-│  └─ trips_combined_YYYYMMDD.parquet         │
-└─────────────────────────────────────────────┘
-                      ↓
-┌─────────────────────────────────────────────┐
-│  3. COMBINE ALL (combine_all_trips.py)      │
-│  Alla trips → En total-fil                  │
-│  └─ trips_combined_total.parquet            │
-└─────────────────────────────────────────────┘
+cd ml_modell
+jupyter notebook
 ```
 
----
+**Kör notebooks i följande ordning:**
 
-##  Planerade resor (för ML-förutsägelser)
+1. **`1_0_Load_and_Clean_Data.ipynb`**  
+   Laddar data från Azure och förbereder den för modellträning.
 
-1. **Hämta data:**
-   `fetch_planned.py`
-2. **Bearbeta data:**
-   `transform_planned_to_curated.py`
-3. **Spara till:**
-   `Azure/curated/planned/`
+2. **`2_0_Delay_Prediction_Model.ipynb`**  
+   Tränar fyra klassificeringsmodeller: Logistic Regression, Random Forest, Gradient Boosting och XGBoost.  
+   Utvärderar modellerna med accuracy, precision, recall, F1-score och ROC-AUC.
 
-**Inspektion av hämtad data kan göras med:**
-
-* Historiska resor → `inspect_combined_total.ipynb`
-* Planerade resor → `inspect_planned.ipynb`
-
----
-
-## 📁 Projektstruktur
+3. **`3_0_Evaluate_predictions.ipynb`**  
+   Validerar den bästa modellen på planerade resor och analyserar feature importance.
 
 ```
-projekt/
-├── config.py                          # Konfiguration (API-nycklar, Azure credentials)
-├── logger.py                          # Logger-modul
-├── fetch_train_data.py                # Steg 1: Hämta från API
-├── fetch_planned.py                   # Hämta planerad data
-├── process_trips.py                   # Steg 2: Bygg trips
-├── combine_all_trips.py               # Steg 3: Kombinera allt
-├── run_production_pipeline.py         # Huvudfil för körning
-├── transform_planned_to_curated.py    # Transformering av planerad data
-├── inspect_combined_total.ipynb       # Notebook för historisk data
-├── inspect_planned.ipynb              # Notebook för planerad data
-├── station_info.parquet               # Stationsdata
-├── README.md
-├── .gitignore
-└── .funcignore
+
+## Filstruktur
+
+Trafikverket/
+│
+├── ml_modell/                                # Maskininlärningsmodeller och analys
+│   ├── data/                                # Lokal datakatalog
+│   ├── predictions/                         # Modellprediktioner
+│   ├── validation/                          # Valideringsdata
+│   ├── 1_0_Load_and_Clean_Data.ipynb        # Notebook: Dataförbearbetning
+│   ├── 2_0_Delay_Prediction_Model.ipynb     # Notebook: Modellträning
+│   ├── 3_0_Evaluate_predictions.ipynb       # Notebook: Modellutvärdering
+│   ├── train_delay_encoder.pkl              # Tränad encoder
+│   ├── train_delay_model.pkl                # Tränad modell
+│   ├── train_delay_scaler.pkl               # Tränad scaler
+│   └── training_feature_names.json          # Feature-namn för träning
+│
+├── pipeline/                                # Data-pipeline för ETL
+│   ├── logs/                                # Automatiskt genererade loggar
+│   │
+│   ├── config.py                            # Konfiguration (API, Azure)
+│   ├── logger.py                            # Centraliserad loggningsmodul
+│   │
+│   ├── fetch_train_data.py                  # Steg 1: Hämta historisk data
+│   ├── fetch_planned.py                     # Steg 2: Hämta planerad data
+│   ├── process_trips.py                     # Steg 3: Processera trips
+│   ├── transform_planned_to_curated.py      # Steg 4: Transformera planerad
+│   ├── combine_all_trips.py                 # Steg 5: Kombinera alla trips
+│   ├── run_production_pipeline.py           # Huvudscript för pipeline
+│   │
+│   ├── inspect_combined_total.ipynb         # Inspektion: Historisk data
+│   ├── inspect_planned.ipynb                # Inspektion: Planerad data
+│   │
+│   ├── station_info.parquet                 # Stationsmetadata
+│   ├── requirements.txt                     # Python-beroenden
+│   ├── .gitignore                           # Git ignore-regler
+│   └── .funcignore                          # Azure Functions ignore
+│
+├── README.md                                # Huvuddokumentation
+├── requirements.txt                         # Projektets dependencies
+├── .gitignore                               # Git ignore för hela projektet
+└── trafikverket.pbix                        # Power BI-rapport
+```
+### Pipeline-flöde
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1️⃣ HÄMTA DATA (fetch_train_data.py)                        │
+│     Trafikverket API → Azure/raw/                           │
+│     ├─ departures_YYYYMMDD.parquet                          │
+│     └─ arrivals_YYYYMMDD.parquet                            │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  2️⃣ HÄMTA PLANERAD (fetch_planned.py)                       │
+│     Trafikverket API → Azure/raw/planned/                   │
+│     ├─ arrivals_YYYY-MM-DD.json                             │
+│     └─ departures_YYYY-MM-DD.json                           │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  3️⃣ PROCESSERA RESOR (process_trips.py)                     │
+│     Azure/raw/ → Azure/curated/                             │
+│     ├─ Platta ut nästlade JSON-strukturer                   │
+│     ├─ Gruppera per tåg + datum                             │
+│     ├─ Matcha avgångar med ankomster                        │
+│     ├─ Beräkna förseningar & avstånd                        │
+│     └─ trips_combined_YYYYMMDD.parquet                      │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  4️⃣ TRANSFORMERA PLANERAD (transform_planned_to_curated.py)│
+│     Azure/raw/planned/ → Azure/curated/planned/             │
+│     └─ planned_trips_YYYY-MM-DD.parquet                     │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5️⃣ KOMBINERA ALLA (combine_all_trips.py)                   │
+│     Slå ihop alla resor → En huvudfil                       │
+│     ├─ Deduplicera på (TrainIdent, Date)                    │
+│     └─ trips_combined_total.parquet                         │
+└─────────────────────────────────────────────────────────────┘
 ```
 
----
+## 🔄 Dataprocess och skapande av resor
 
-## 🧾 Loggning
+Resorna skapas automatiskt utifrån Trafikverkets öppna trafikdata. Projektet är uppbyggt som en tydlig pipeline som hämtar, bearbetar och lagrar data i Azure Data Lake innan den visualiseras i Power BI.
 
-Loggar hanteras via `logger.py` och sparas automatiskt till fil.
+```
+RAW-data (ankomster + avgångar)
+       ↓
+Läs in Parquet-filer från Azure Data Lake
+   → raw/departures_YYYYMMDD.parquet
+   → raw/arrivals_YYYYMMDD.parquet
+       ↓
+Platta ut nästlade kolumner (FromLocation, ToLocation, TypeOfTraffic)
+Konvertera tidkolumner till UTC-format
+Tilldela datum (TripDate)
+       ↓
+Gruppera per tåg och datum
+   → AdvertisedTrainIdent + TripDate
+       ↓
+För varje grupp:
+   → Identifiera första avgången  (ActivityType = departure)
+   → Identifiera sista ankomsten  (ActivityType = arrival)
+       ↓
+Beräkna:
+   → Försening i minuter
+   → Restid, operatör, typ av trafik, veckodag, månad, timme
+       ↓
+Berika med stationsdata (station_info.parquet)
+   → Namn, län, koordinater, avstånd i km (haversine)
+       ↓
+Spara resultatet till Azure Data Lake (curated/)
+   → trips_combined_YYYYMMDD.parquet
+   → trips_combined_YYYYMMDD_canceled.parquet
+```
 
----
-
-##  Datamodell
-
-| Kategori                  | Kolumn(er)                                                      | Beskrivning                            |
-| ------------------------- | --------------------------------------------------------------- | -------------------------------------- |
-| **Identifierare & datum** | `AdvertisedTrainIdent`, `TripStartDate`                         | Tåg-ID och datum                       |
-| **Stationer**             | `departure_station`, `arrival_station`, `end_station_county`    | Namn och län                           |
-| **Tider – avgång**        | `DepartureAdvertised`, `DepartureActual`                        | Planerad och faktisk avgång            |
-| **Tider – ankomst**       | `ArrivalAdvertised`, `ArrivalActual`                            | Planerad och faktisk ankomst           |
-| **Mätvärden**             | `DurationActualMinutes`, `DistanceKm`, `is_delayed`             | Restid, avstånd och försening (>3 min) |
-| **Features (för ML)**     | `start_hour`, `start_day_of_month`, `start_month`, `is_weekday` | Tidsbaserade variabler                 |
-| **Status & operatör**     | `Canceled`, `Operator`, `TrainOwner`, `trip_typeoftraffic`      | Status och operatör                    |
-| **Avvikelser**            | `Deviation_Description`                                         | Orsak till avvikelse                   |
-
----
-
-## 🧮 Hantering av saknade värden
-
-| Scenario        | Canceled | DepartureActual | ArrivalActual | Resultat         |
-| --------------- | -------- | --------------- | ------------- | ---------------- |
-| Normal resa     | False    | ✅               | ✅             | ✅ Huvudfil       |
-| Helt inställd   | True     | ❌               | ❌             | 📋 Canceled-fil  |
-| Delvis inställd | True     | ❌               | ✅             | ✅ Fylls          |
-| Delvis inställd | True     | ✅               | ❌             | ✅ Fylls          |
-| Ofullständig    | False    | ❌               | ✅             | ❌ Filtreras bort |
-| Ofullständig    | False    | ✅               | ❌             | ❌ Filtreras bort |
-
-> Saknade tider (`DepartureActual`, `ArrivalActual`) fylls **endast** för inställda resor (`Canceled=True`) eftersom dessa har dokumenterad avvikelse.
-
----
-
-## 🧠 ML-motivering
-
-Pipelinen är förberedd för **prediktiv modellering**.
-Exempel på användningsområden:
-
-* Förutsäga **tågförseningar**
-* Identifiera vilka resor som löper **störst risk att bli sena**
-* Träna modeller baserat på features såsom tid, veckodag, operatör och sträcka
+### Definition av is_delayed
+En resa markeras som försenad (`is_delayed = 1`) om tåget anländer **mer än 5 minuter och 59 sekunder (RT+5)** efter planerad ankomsttid. Annars markeras resan som punktlig (`is_delayed = 0`).
 
 ---
+
+## 📊 Power BI-visualisering
+
+Nyckeltal och statistik över det färdiga datamaterialet visualiseras i en **Power BI-rapport** som även finns publicerad i projektets Git-repo. Rapporten visar bland annat:
+- Punktlighet (RT+5)
+- Förseningar per operatör och län
+- Tidsmönster (dygn, veckodag, månad)
+- Geografisk spridning av förseningar
+
+För att visa rapporten:
+1. Öppna `trafikverket.pbix` i Power BI Desktop
+2. Kontrollera att datakällan pekar mot rätt mapp (`curated/`)
+3. Uppdatera data med **Refresh**
+
+---
+
+## 🤖 Maskininlärning
+
+Den bearbetade datan används som underlag för maskininlärningsmodeller som tränas för att förutsäga sannolikheten att ett tåg blir försenat. Modellerna testas med flera olika algoritmer, bland annat:
+- **Logistic Regression**
+- **Random Forest**
+- **Gradient Boosting**
+- **XGBoost**
+
+Varje modell utvärderas med mått som *accuracy*, *precision*, *recall*, *F1-score* och *ROC-AUC* för att bedöma hur väl de identifierar faktiska förseningar. Resultaten jämförs sedan för att välja den modell som ger bäst balans mellan precision och generaliseringsförmåga.
+
+**Resultat:**
+- XGBoost uppnådde bäst prestanda med 81% accuracy och 0.53 recall på historisk testdata
+- Vid validering på planerade resor sjönk recall till 0.18, vilket visar begränsningar i generaliseringsförmågan
+- Analysen bekräftar att längre distanser, dagtid och vardagar ökar förseningsrisken
+
+---
+
+## 👥 Projektteam
+
+**Camilla Dahlman**, **Karl Tengström**, **Gustav Jeansson**  
+Data Scientists (EC Utbildning)  
+
+För kontakt, se respektive LinkedIn-profil.
+
+---
+
+Detta projekt använder Trafikverkets öppna data enligt gällande användarvillkor.

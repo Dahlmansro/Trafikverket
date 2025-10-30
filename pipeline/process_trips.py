@@ -190,9 +190,11 @@ def first_departure_last_arrival(group: pd.DataFrame) -> Optional[Dict]:
     if pd.isna(end_actual) and canceled:
         end_actual = end_planned
 
+    # Beräkna försening i minuter
     delay_minutes = np.nan
     if pd.notna(end_actual) and pd.notna(end_planned):
-        delay_minutes = round((end_actual - end_planned).total_seconds() / 60.0)
+        delay_minutes = (end_actual - end_planned).total_seconds() / 60.0
+
 
     start_station = dep_row.get("LocationSignature")
     end_station = arr_row.get("LocationSignature")
@@ -230,7 +232,8 @@ def first_departure_last_arrival(group: pd.DataFrame) -> Optional[Dict]:
     if pd.notna(start_actual) and pd.notna(end_actual):
         duration_min = round((end_actual - start_actual).total_seconds() / 60.0)
     
-    is_delayed = 1 if pd.notna(delay_minutes) and delay_minutes > 3 else 0
+    # Markera som försenad om ankomst sker senare än 5 min 59 sek (≈5.983 min)
+    is_delayed = 1 if pd.notna(delay_minutes) and delay_minutes > (5 + 59/60) else 0
 
     return {
         "AdvertisedTrainIdent": train_id,

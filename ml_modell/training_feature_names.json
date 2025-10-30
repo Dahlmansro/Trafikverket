@@ -1,0 +1,15 @@
+[
+  "DistanceKm",
+  "start_hour",
+  "start_day_of_month",
+  "start_month",
+  "is_weekday",
+  "is_rush_hour",
+  "LocationSignatureDeparture_encoded",
+  "LocationSignatureArrival_encoded",
+  "Operator_encoded",
+  "TrainOwner_encoded",
+  "trip_typeoftraffic_encoded",
+  "departure_station_encoded",
+  "arrival_station_encoded"
+]
